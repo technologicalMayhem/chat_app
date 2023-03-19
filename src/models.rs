@@ -1,10 +1,10 @@
-use diesel::{Queryable, Insertable};
 use crate::schema::users;
+use diesel::{Insertable, Queryable, Selectable};
 
-#[derive(Debug, Queryable)]
+#[derive(Debug, Queryable, Selectable)]
 pub struct User {
     pub id: i32,
-    pub username: String
+    pub username: String,
 }
 
 #[derive(Debug, Queryable)]
