@@ -1,7 +1,8 @@
 use std::{io::stdin, process::exit};
 
 use chat_app::{
-    change_username, create_user, delete_user, establish_connection, get_all_users, get_user,
+    change_username, check_password, create_user, delete_user, establish_connection, get_all_users,
+    get_user, set_password,
 };
 use eyre::Result;
 use thiserror::Error;
@@ -11,6 +12,8 @@ enum MenuOption {
     Read,
     Update,
     Delete,
+    SetPassword,
+    CheckPassword,
     Exit,
 }
 
@@ -34,23 +37,31 @@ fn main() -> Result<()> {
             }
         };
 
-        match result {
-            MenuOption::Create => menu_create_user()?,
-            MenuOption::Read => menu_read_user()?,
-            MenuOption::Update => menu_update_user()?,
-            MenuOption::Delete => menu_delete_user()?,
+        let result = match result {
+            MenuOption::Create => menu_create_user(),
+            MenuOption::Read => menu_read_user(),
+            MenuOption::Update => menu_update_user(),
+            MenuOption::Delete => menu_delete_user(),
             MenuOption::Exit => exit(0),
+            MenuOption::SetPassword => menu_set_password(),
+            MenuOption::CheckPassword => menu_check_password(),
+        };
+
+        if let Err(e) = result {
+            println!("{e}\n");
         }
     }
 }
 
 fn try_menu_main() -> Result<MenuOption> {
-    println!("What do you want to do?\n");
+    println!("=== What do you want to do? ===\n");
     println!("1. Create User");
     println!("2. Read User");
     println!("3. Update User");
     println!("4. Delete User");
-    println!("5. Exit");
+    println!("5. Set Password");
+    println!("6. Check Password");
+    println!("7. Exit");
 
     let int: i32 = read_string()?.parse()?;
 
@@ -59,7 +70,9 @@ fn try_menu_main() -> Result<MenuOption> {
         2 => Ok(MenuOption::Read),
         3 => Ok(MenuOption::Update),
         4 => Ok(MenuOption::Delete),
-        5 => Ok(MenuOption::Exit),
+        5 => Ok(MenuOption::SetPassword),
+        6 => Ok(MenuOption::CheckPassword),
+        7 => Ok(MenuOption::Exit),
         _ => Err(CrudError::InvalidMenuOption)?,
     }
 }
@@ -129,6 +142,34 @@ fn menu_delete_user() -> Result<()> {
     let username = read_string()?;
 
     delete_user(conn, &username)?;
+
+    Ok(())
+}
+
+fn menu_set_password() -> Result<()> {
+    println!("What user do you want to set a password for?");
+    let username = read_string()?;
+    println!("What do you want to set the password to?");
+    let password = read_string()?;
+
+    let conn = &mut establish_connection()?;
+    set_password(conn, &username, &password)?;
+
+    Ok(())
+}
+
+fn menu_check_password() -> Result<()> {
+    println!("What user do you want to check the password of?");
+    let username = read_string()?;
+    println!("Enter their password.");
+    let password = read_string()?;
+
+    let conn = &mut establish_connection()?;
+    if check_password(conn, &username, &password)? {
+        println!("Correct password!");
+    } else {
+        println!("Incorrect password!");
+    }
 
     Ok(())
 }

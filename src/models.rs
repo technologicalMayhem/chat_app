@@ -1,4 +1,4 @@
-use crate::schema::users;
+use crate::schema::{authentications, users};
 use diesel::{Insertable, Queryable, Selectable};
 
 #[derive(Debug, Queryable, Selectable)]
@@ -10,21 +10,27 @@ pub struct User {
 #[derive(Debug, Queryable)]
 pub struct Authentication {
     pub id: i32,
-    pub user_id: i32,
-    pub salt: String,
-    pub hashed_password: String,
+    pub userid: i32,
+    pub hashedpassword: String,
 }
 
 #[derive(Debug, Queryable)]
 pub struct Message {
     pub id: i32,
     pub date: String,
-    pub message_text: String,
-    pub user_id: i32,
+    pub messagetext: String,
+    pub userid: i32,
 }
 
 #[derive(Insertable)]
 #[diesel(table_name = users)]
 pub struct NewUser<'a> {
     pub username: &'a str,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = authentications)]
+pub struct NewAuthentication {
+    pub userid: i32,
+    pub hashedpassword: String,
 }

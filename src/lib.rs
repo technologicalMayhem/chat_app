@@ -1,13 +1,13 @@
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
-use schema::users;
 use thiserror::Error;
 
-use crate::models::{NewUser, User};
+use crate::models::{Authentication, NewAuthentication, NewUser, User};
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
+mod auth;
 pub mod models;
 pub mod schema;
 
@@ -29,6 +29,8 @@ pub enum DbError {
     UserNotFound,
     #[error("The underlying database engine encountered an error")]
     GenericError(#[from] diesel::result::Error),
+    #[error("No password set")]
+    NoPasswordSet,
 }
 
 /// Create a new user.
@@ -43,7 +45,7 @@ pub fn create_user(conn: &mut SqliteConnection, name: &str) -> Result<(), DbErro
 
     let new_user = NewUser { username: name };
 
-    match diesel::insert_into(users::table)
+    match diesel::insert_into(schema::users::table)
         .values(&new_user)
         .execute(conn)
     {
@@ -123,7 +125,49 @@ pub fn delete_user(conn: &mut SqliteConnection, name: &str) -> Result<(), DbErro
 ///
 /// This function will return an error if reading all entries from the user table fails.
 pub fn get_all_users(conn: &mut SqliteConnection) -> Result<Vec<User>, DbError> {
-    Ok(users::dsl::users.load::<User>(conn)?)
+    Ok(schema::users::dsl::users.load::<User>(conn)?)
+}
+
+pub fn set_password(
+    conn: &mut SqliteConnection,
+    username: &str,
+    password: &str,
+) -> Result<(), DbError> {
+    use schema::authentications::dsl::{authentications, hashedpassword, userid};
+    let hash = auth::generate_hash(&password);
+    let user = get_user(conn, username)?;
+    let user_auth_data = authentications.filter(userid.eq(user.id));
+    let auth_exists = user_auth_data.first::<Authentication>(conn).is_ok();
+
+    if auth_exists {
+        diesel::update(user_auth_data)
+            .set(hashedpassword.eq(hash))
+            .execute(conn)?;
+    } else {
+        let auth_data = NewAuthentication {
+            userid: user.id,
+            hashedpassword: hash,
+        };
+        diesel::insert_into(authentications)
+            .values(auth_data)
+            .execute(conn)?;
+    }
+
+    Ok(())
+}
+
+pub fn check_password(
+    conn: &mut SqliteConnection,
+    username: &str,
+    password: &str,
+) -> Result<bool, DbError> {
+    use schema::authentications::dsl::{authentications, userid};
+    let user = get_user(conn, username)?;
+    let Ok(auth_data) = authentications.filter(userid.eq(user.id)).first::<Authentication>(conn) else {
+        return Err(DbError::NoPasswordSet);
+    };
+
+    Ok(auth::verify_password(password, &auth_data.hashedpassword))
 }
 
 /// Establish a connection to the database.

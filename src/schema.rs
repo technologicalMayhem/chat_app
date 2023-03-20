@@ -4,7 +4,6 @@ diesel::table! {
     authentications (id) {
         id -> Integer,
         userid -> Integer,
-        salt -> Text,
         hashedpassword -> Text,
     }
 }

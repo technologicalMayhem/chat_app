@@ -7,7 +7,6 @@ CREATE TABLE users (
 CREATE TABLE authentications (
     id INTEGER NOT NULL PRIMARY KEY,
     userid INTEGER NOT NULL,
-    salt TEXT NOT NULL,
     hashedpassword TEXT NOT NULL,
     FOREIGN KEY(userid) REFERENCES user(userid)
 );
