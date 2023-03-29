@@ -127,16 +127,29 @@ impl ChatApp {
     /// # Errors
     ///
     /// This function will return an error if the user is not logged in or the messages could not be retrieved.
-    pub fn get_messages(&mut self, login_token: &LoginToken, filter: &MessageFilter) -> Result<Vec<Message>, AppError> {
+    pub fn get_messages(
+        &mut self,
+        login_token: &LoginToken,
+        filter: &MessageFilter,
+    ) -> Result<Vec<Message>, AppError> {
         if self.get_username_for_token(login_token).is_none() {
             return Err(AppError::TokenInvalid);
         }
         Ok(get_messages(&mut self.db_connection, filter)?)
     }
 
+    /// Gets the user with that id.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the user does not exist.
+    pub fn get_user_by_id(&mut self, id: i32) -> Result<User, AppError> {
+        Ok(get_user_by_id(&mut self.db_connection, id)?)
+    }
+
     fn get_user_for_token(&mut self, login_token: &LoginToken) -> Result<User, AppError> {
         let Some(username) = self.get_username_for_token(login_token) else {return Err(AppError::TokenInvalid)};
-        Ok(get_user(&mut self.db_connection, &username)?)
+        Ok(get_user_by_name(&mut self.db_connection, &username)?)
     }
 
     fn get_username_for_token(&mut self, login_token: &LoginToken) -> Option<String> {
@@ -196,7 +209,7 @@ pub struct LoginToken(String);
 ///
 /// This function will return an error if the cration of the user failed.
 pub fn create_user(conn: &mut SqliteConnection, name: &str) -> Result<(), DbError> {
-    if get_user(conn, name).is_ok() {
+    if get_user_by_name(conn, name).is_ok() {
         return Err(DbError::UsernameInUse);
     }
 
@@ -216,7 +229,7 @@ pub fn create_user(conn: &mut SqliteConnection, name: &str) -> Result<(), DbErro
 /// # Errors
 ///
 /// This function will return an error if no user with that name could be found.
-pub fn get_user(conn: &mut SqliteConnection, name: &str) -> Result<User, DbError> {
+pub fn get_user_by_name(conn: &mut SqliteConnection, name: &str) -> Result<User, DbError> {
     use crate::schema::users::dsl::{username, users};
 
     let Ok(mut found_users) = users.filter(username.eq(name)).load::<User>(conn) else { return Err(DbError::UserFilterFailed)? };
@@ -228,6 +241,17 @@ pub fn get_user(conn: &mut SqliteConnection, name: &str) -> Result<User, DbError
 
         Ok(user)
     }
+}
+
+    /// Gets the user with that id.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the user does not exist.
+pub fn get_user_by_id(conn: &mut SqliteConnection, id: i32) -> Result<User, DbError> {
+    use crate::schema::users::dsl::{id as user_id, users};
+
+    Ok(users.filter(user_id.eq(id)).first::<User>(conn)?)
 }
 
 /// Change the name of a user.
@@ -242,7 +266,7 @@ pub fn change_username(
 ) -> Result<(), DbError> {
     use crate::schema::users::dsl::{username, users};
 
-    if get_user(conn, new_username).is_ok() {
+    if get_user_by_name(conn, new_username).is_ok() {
         return Err(DbError::UsernameInUse);
     }
 
@@ -297,7 +321,7 @@ pub fn set_password(
 ) -> Result<(), DbError> {
     use schema::authentications::dsl::{authentications, hashedpassword, userid};
     let hash = auth::generate_hash(password);
-    let user = get_user(conn, username)?;
+    let user = get_user_by_name(conn, username)?;
     let user_auth_data = authentications.filter(userid.eq(user.id));
     let auth_exists = user_auth_data.first::<Authentication>(conn).is_ok();
 
@@ -329,7 +353,7 @@ pub fn check_password(
     password: &str,
 ) -> Result<bool, DbError> {
     use schema::authentications::dsl::{authentications, userid};
-    let user = get_user(conn, username)?;
+    let user = get_user_by_name(conn, username)?;
     let Ok(auth_data) = authentications.filter(userid.eq(user.id)).first::<Authentication>(conn) else {
         return Err(DbError::NoPasswordSet);
     };
@@ -360,7 +384,7 @@ pub fn create_message(
     Ok(())
 }
 
-pub enum MessageFilter{
+pub enum MessageFilter {
     Before(DateTime<Local>),
     After(DateTime<Local>),
 }
@@ -375,17 +399,15 @@ pub fn get_messages(
     filter: &MessageFilter,
 ) -> Result<Vec<Message>, DbError> {
     use schema::messages::dsl::{date, messages};
-    let query = messages
-        .order_by(date)
-        .limit(20);
+    let query = messages.order_by(date).limit(20);
 
     let result = match filter {
-        MessageFilter::Before(before) => {
-            query.filter(date.lt(before.to_rfc3339())).load::<Message>(conn)?
-        },
-        MessageFilter::After(after) => {
-            query.filter(date.gt(after.to_rfc3339())).load::<Message>(conn)?
-        }
+        MessageFilter::Before(before) => query
+            .filter(date.lt(before.to_rfc3339()))
+            .load::<Message>(conn)?,
+        MessageFilter::After(after) => query
+            .filter(date.gt(after.to_rfc3339()))
+            .load::<Message>(conn)?,
     };
 
     Ok(result)

@@ -2,7 +2,7 @@ use std::{io::stdin, process::exit};
 
 use chat_app::{
     change_username, check_password, create_user, delete_user, establish_connection, get_all_users,
-    get_user, set_password,
+    get_user_by_name, set_password,
 };
 use eyre::Result;
 use thiserror::Error;
@@ -105,7 +105,7 @@ fn menu_read_user() -> Result<()> {
         ReadOption::Single => {
             println!("What user should be looked up?");
             let username = read_string()?;
-            let user = get_user(conn, &username)?;
+            let user = get_user_by_name(conn, &username)?;
             println!("\nId Name\n--------");
             println!("{}: {}", user.id, user.username);
         }

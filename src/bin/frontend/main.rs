@@ -82,7 +82,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
                         modifiers: KeyModifiers::CONTROL,
                         kind: _,
                         state: _,
-                    } => app.screens.push(Window::new()),
+                    } => {
+                        app.screens.push(Window::new());
+                        app.screens.next();
+                    }
                     KeyEvent {
                         code: KeyCode::Tab,
                         modifiers: _,
@@ -177,17 +180,27 @@ struct SessionData {
     token: LoginToken,
     last_update: DateTime<Local>,
     messages: Vec<Message>,
+    known_usernames: HashMap<i32, String>,
 }
 
 impl SessionData {
     fn new(app: &mut ChatApp, token: LoginToken) -> Result<Self> {
         let now = Local::now();
         let messages = app.get_messages(&token, &MessageFilter::Before(now))?;
+        let mut known_usernames: HashMap<i32, String> = HashMap::new();
+        for msg in &messages {
+            if !known_usernames.contains_key(&msg.userid) {
+                if let Ok(user) = app.get_user_by_id(msg.userid) {
+                    known_usernames.insert(user.id, user.username);
+                }
+            }
+        }
 
         Ok(Self {
             token,
             last_update: now,
             messages,
+            known_usernames,
         })
     }
 
@@ -196,6 +209,13 @@ impl SessionData {
         let mut messages =
             app.get_messages(&self.token, &MessageFilter::After(self.last_update))?;
         if !messages.is_empty() {
+            for msg in &messages {
+                if !self.known_usernames.contains_key(&msg.userid) {
+                    if let Ok(user) = app.get_user_by_id(msg.userid) {
+                        self.known_usernames.insert(user.id, user.username);
+                    }
+                }
+            }
             self.messages.append(&mut messages);
             self.last_update = now;
         }

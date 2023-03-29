@@ -185,7 +185,12 @@ impl Window {
                 let mut messages: Vec<String> = Vec::new();
 
                 for message in &data.messages {
-                    messages.push(format!("{}: {}", message.userid, message.messagetext));
+                    let name = match data.known_usernames.get(&message.userid) {
+                        Some(name) => name.clone(),
+                        None => message.userid.to_string(),
+                    };
+                    let text = &message.messagetext;
+                    messages.push(format!("{name}: {text}"));
                 }
 
                 chat.message_list = messages;
