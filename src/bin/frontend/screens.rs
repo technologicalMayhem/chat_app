@@ -97,6 +97,7 @@ impl Window {
     /// Handles the input for the window and apply changes to it and the ``ChatData`` as necessary.
     pub(crate) fn handle_input(&mut self, data: &mut ChatData, event: &Event) {
         match &mut self.state {
+            // Handle input for the chat screen
             MenuState::Chat(chat) => {
                 if chat.status_message.is_some() {
                     chat.status_message = None;
@@ -135,6 +136,7 @@ impl Window {
                     }
                 }
             }
+            // Handle input for the login screen
             MenuState::Login(form) => {
                 if form.status_message.is_some() {
                     form.status_message = None;
@@ -217,6 +219,7 @@ impl Widget for Window {
         block.render(area, buf);
 
         match self.state {
+            // Rendering logic for the chat screen
             MenuState::Chat(chat) => {
                 let layout = Layout::default()
                     .direction(Direction::Vertical)
@@ -250,6 +253,7 @@ impl Widget for Window {
                     Paragraph::new(Span::styled(message, Style::default())).render(layout[2], buf);
                 }
             }
+            // Rendering logic for the login screen
             MenuState::Login(login) => {
                 let layout = Layout::default()
                     .direction(Direction::Vertical)
