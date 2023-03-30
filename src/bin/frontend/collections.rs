@@ -1,5 +1,6 @@
 use std::slice::Iter;
 
+/// A wrapper around ``Vec<T>`` holding the index of a element to be considered 'active'.
 #[derive(Clone)]
 pub struct ActiveVec<T> {
     items: Vec<T>,
@@ -7,6 +8,7 @@ pub struct ActiveVec<T> {
 }
 
 impl<T> ActiveVec<T> {
+    /// Creates a new instance of ``ActiveVec<T>``.
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
@@ -14,6 +16,11 @@ impl<T> ActiveVec<T> {
         }
     }
 
+    /// Appends an element to the back of the collection. Marks the element also as active, if it's the only element in the collection.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the new capacity exceeds `isize::MAX` bytes.
     pub fn push(&mut self, item: T) {
         self.items.push(item);
         if self.active_index.is_none() {
@@ -21,22 +28,28 @@ impl<T> ActiveVec<T> {
         }
     }
 
+    /// Get the index for the currently active element. Returns ``None`` if the collection is empty.
     pub fn get_active_index(&self) -> Option<usize> {
         self.active_index
     }
 
+    /// Get a reference to the active element. Returns ``None`` if the collection is empty.
     pub fn get_active(&self) -> Option<&T> {
         self.active_index.and_then(|i| self.items.get(i))
     }
 
+    /// Get a mutable reference to the active element. Returns ``None`` if the collection is empty.
     pub fn get_active_mut(&mut self) -> Option<&mut T> {
         self.active_index.and_then(|i| self.items.get_mut(i))
     }
 
+    /// Returns an iterator over the elements in the collection.
     pub fn iter(&self) -> Iter<'_, T> {
         self.items.iter()
     }
 
+    /// Increments the index of the active element. Wraps around to the start if the end has been reached.
+    /// If no elemnts are in the collection, nothing happens.
     pub fn next(&mut self) {
         if let Some(index) = self.active_index {
             if index + 1 >= self.items.len() {
@@ -47,6 +60,8 @@ impl<T> ActiveVec<T> {
         }
     }
 
+    /// Decrements the index of the active element. Wraps around to the end if the index is at the start.
+    /// If no elemnts are in the collection, nothing happens.
     pub fn prev(&mut self) {
         if let Some(index) = self.active_index {
             if index == 0 {

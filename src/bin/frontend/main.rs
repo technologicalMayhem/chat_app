@@ -53,6 +53,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+/// Main loop for running the app.
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
     loop {
         for session in app.chat.logins.values_mut() {
@@ -109,6 +110,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
     }
 }
 
+/// Update the ui.
 fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
     let size = f.size();
     let chunks = Layout::default()
@@ -134,6 +136,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
     f.render_widget(help_text(), chunks[2]);
 }
 
+/// Creates a ``Paragraph`` holding the help text shown at the bottom.
 fn help_text<'a>() -> Paragraph<'a> {
     let normal = Style::default();
     let highlight = Style::default().fg(Color::Green);
@@ -149,6 +152,7 @@ fn help_text<'a>() -> Paragraph<'a> {
     ]))
 }
 
+/// Converts instances of ``TabTitle`` to a collection of ``Spans``.
 fn tab_titles_to_spans(titles: &[TabTitle]) -> Vec<Spans> {
     titles
         .iter()
@@ -161,21 +165,25 @@ fn tab_titles_to_spans(titles: &[TabTitle]) -> Vec<Spans> {
         .collect()
 }
 
+/// Holds the name and state of the title for the tabs.
 enum TabTitle {
     Active(String),
     Inactive(String),
 }
 
+/// Holds the current state of the the app and ui.
 struct App {
     chat: ChatData,
     screens: ActiveVec<Window>,
 }
 
+/// Holds the data relating to the current state of the application
 struct ChatData {
     chat_app: ChatApp,
     logins: HashMap<String, SessionData>,
 }
 
+/// Holds the data for a users session.
 struct SessionData {
     token: LoginToken,
     last_update: DateTime<Local>,
@@ -183,7 +191,46 @@ struct SessionData {
     known_usernames: HashMap<i32, String>,
 }
 
+
+impl App {
+    /// Create a new instance of ``App``.
+    fn new() -> Result<Self> {
+        let mut screen: ActiveVec<Window> = ActiveVec::new();
+        screen.push(Window::new());
+
+        let chat = ChatData {
+            chat_app: ChatApp::new()?,
+            logins: HashMap::new(),
+        };
+
+        Ok(App {
+            chat,
+            screens: screen,
+        })
+    }
+
+    /// Get the ``TabTitle``s to show.
+    fn tab_titles(&self) -> Vec<TabTitle> {
+        if let Some(active_index) = self.screens.get_active_index() {
+            self.screens
+                .iter()
+                .enumerate()
+                .map(|(index, screen)| {
+                    if index == active_index {
+                        TabTitle::Active(screen.title())
+                    } else {
+                        TabTitle::Inactive(screen.title())
+                    }
+                })
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+}
+
 impl SessionData {
+    /// Creates a new instance of ``SessionData`` and populates it with chat messages
     fn new(app: &mut ChatApp, token: LoginToken) -> Result<Self> {
         let now = Local::now();
         let messages = app.get_messages(&token, &MessageFilter::Before(now))?;
@@ -204,6 +251,7 @@ impl SessionData {
         })
     }
 
+    /// Updates the sessions states and adds new messages if available.
     fn update(&mut self, app: &mut ChatApp) -> Result<()> {
         let now = Local::now();
         let mut messages =
@@ -221,40 +269,5 @@ impl SessionData {
         }
 
         Ok(())
-    }
-}
-
-impl App {
-    fn new() -> Result<Self> {
-        let mut screen: ActiveVec<Window> = ActiveVec::new();
-        screen.push(Window::new());
-
-        let chat = ChatData {
-            chat_app: ChatApp::new()?,
-            logins: HashMap::new(),
-        };
-
-        Ok(App {
-            chat,
-            screens: screen,
-        })
-    }
-
-    fn tab_titles(&self) -> Vec<TabTitle> {
-        if let Some(active_index) = self.screens.get_active_index() {
-            self.screens
-                .iter()
-                .enumerate()
-                .map(|(index, screen)| {
-                    if index == active_index {
-                        TabTitle::Active(screen.title())
-                    } else {
-                        TabTitle::Inactive(screen.title())
-                    }
-                })
-                .collect()
-        } else {
-            vec![]
-        }
     }
 }

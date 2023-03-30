@@ -9,17 +9,20 @@ use tui::{
 
 use crate::{ChatData, SessionData};
 
+/// Used to hold the current window state.
 #[derive(Clone)]
 pub struct Window {
     state: MenuState,
 }
 
+/// Keeps track of what ste the ``Window`` currently is in.
 #[derive(Clone)]
 enum MenuState {
     Chat(ChatWindow),
     Login(LoginWindow),
 }
 
+/// Holds the current state of the chat window.
 #[derive(Clone)]
 struct ChatWindow {
     title: String,
@@ -28,6 +31,7 @@ struct ChatWindow {
     status_message: Option<String>,
 }
 
+/// Holds the current state of the login window.
 #[derive(Clone)]
 struct LoginWindow {
     username: FormElement,
@@ -36,12 +40,14 @@ struct LoginWindow {
     status_message: Option<String>,
 }
 
+/// Keeps track of what element in the ``LoginWindow`` is currently in focus.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum LoginWindowFocus {
     Username,
     Pasword,
 }
 
+/// Represents a form element in a ui screen.
 #[derive(Clone)]
 struct FormElement {
     title: String,
@@ -49,6 +55,7 @@ struct FormElement {
     visibilty: Visibilty,
 }
 
+/// Indicates whether the contents of a ``FormElement`` should be shown or replaced by asterisks.
 #[derive(Clone)]
 enum Visibilty {
     Visible,
@@ -56,6 +63,7 @@ enum Visibilty {
 }
 
 impl FormElement {
+    /// Creates a new ``FormElement``.
     fn new(title: &str, visibilty: Visibilty) -> Self {
         Self {
             content: String::new(),
@@ -66,6 +74,7 @@ impl FormElement {
 }
 
 impl Window {
+    /// Creates a new ``Window`` instance.
     pub fn new() -> Self {
         Self {
             state: MenuState::Login(LoginWindow {
@@ -76,9 +85,8 @@ impl Window {
             }),
         }
     }
-}
 
-impl Window {
+    /// Get the current title for the window.
     pub fn title(&self) -> String {
         match &self.state {
             MenuState::Chat(window) => window.title.clone(),
@@ -86,6 +94,7 @@ impl Window {
         }
     }
 
+    /// Handles the input for the window and apply changes to it and the ``ChatData`` as necessary.
     pub(crate) fn handle_input(&mut self, data: &mut ChatData, event: &Event) {
         match &mut self.state {
             MenuState::Chat(chat) => {
@@ -179,6 +188,7 @@ impl Window {
         }
     }
 
+    /// Updates the ui state with the ``SessionData``.
     pub(crate) fn update(&mut self, data: &SessionData) {
         match &mut self.state {
             MenuState::Chat(chat) => {
@@ -270,6 +280,7 @@ impl Widget for Window {
     }
 }
 
+/// Creates a ``Paragraph`` widget for the given ``FormElement``.
 fn form_element_ui<'a>(element: &FormElement, active: bool) -> Paragraph<'a> {
     let active_style = if active {
         Style::default().fg(Color::Yellow)
