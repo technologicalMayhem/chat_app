@@ -2,7 +2,8 @@ use std::time::{Duration, SystemTime};
 
 use base64::Engine;
 use chrono::{DateTime, Local};
-use diesel::prelude::*;
+use diesel::r2d2::ConnectionManager;
+use diesel::{prelude::*, r2d2::Pool};
 use diesel::sqlite::SqliteConnection;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use models::{Message, NewMessage};
@@ -35,6 +36,8 @@ pub enum DbError {
     UserNotFound,
     #[error("The underlying database engine encountered an error")]
     GenericError(#[from] diesel::result::Error),
+    #[error("Failed to create connection pool")]
+    PoolError(#[from] r2d2::Error),
     #[error("No password set")]
     NoPasswordSet,
 }
@@ -43,6 +46,8 @@ pub enum DbError {
 pub enum AppError {
     #[error("A database operation caused an error")]
     DatabaseError(#[from] DbError),
+    #[error("Failed to obtain a connection from the connection pool")]
+    PoolError(#[from] r2d2::Error),
     #[error("Failed to login user")]
     LoginFailed,
     #[error("The given token is invalid")]
@@ -50,7 +55,7 @@ pub enum AppError {
 }
 
 pub struct ChatApp {
-    db_connection: SqliteConnection,
+    db_connection: Pool<ConnectionManager<SqliteConnection>>,
     active_logins: Vec<ActiveLogin>,
 }
 
@@ -62,7 +67,7 @@ impl ChatApp {
     /// This function will return an error if connecting to the database fails.
     pub fn new() -> Result<Self, AppError> {
         Ok(ChatApp {
-            db_connection: establish_connection()?,
+            db_connection: get_connection_pool()?,
             active_logins: Vec::new(),
         })
     }
@@ -73,8 +78,9 @@ impl ChatApp {
     ///
     /// This function will return an error if registering the user failed.
     pub fn register(&mut self, username: &str, password: &str) -> Result<(), AppError> {
-        create_user(&mut self.db_connection, username)?;
-        set_password(&mut self.db_connection, username, password)?;
+        let conn = &mut self.db_connection.get()?;
+        create_user(conn, username)?;
+        set_password(conn, username, password)?;
         Ok(())
     }
 
@@ -84,7 +90,8 @@ impl ChatApp {
     ///
     /// This function will return an error if the authentication failed.
     pub fn login(&mut self, username: &str, password: &str) -> Result<LoginToken, AppError> {
-        if check_password(&mut self.db_connection, username, password)? {
+        let conn = &mut &mut self.db_connection.get()?;
+        if check_password(conn, username, password)? {
             let active_login = ActiveLogin::new(username);
             let login_token = active_login.token.clone();
 
@@ -117,7 +124,8 @@ impl ChatApp {
         message: &str,
     ) -> Result<(), AppError> {
         let user = self.get_user_for_token(login_token)?;
-        create_message(&mut self.db_connection, message, user.id)?;
+        let conn = &mut &mut self.db_connection.get()?;
+        create_message(conn, message, user.id)?;
 
         Ok(())
     }
@@ -135,7 +143,8 @@ impl ChatApp {
         if self.get_username_for_token(login_token).is_none() {
             return Err(AppError::TokenInvalid);
         }
-        Ok(get_messages(&mut self.db_connection, filter)?)
+        let conn = &mut &mut self.db_connection.get()?;
+        Ok(get_messages(conn, filter)?)
     }
 
     /// Gets the user with that id.
@@ -144,12 +153,14 @@ impl ChatApp {
     ///
     /// This function will return an error if the user does not exist.
     pub fn get_user_by_id(&mut self, id: i32) -> Result<User, AppError> {
-        Ok(get_user_by_id(&mut self.db_connection, id)?)
+        let conn = &mut &mut self.db_connection.get()?;
+        Ok(get_user_by_id(conn, id)?)
     }
 
     fn get_user_for_token(&mut self, login_token: &LoginToken) -> Result<User, AppError> {
         let Some(username) = self.get_username_for_token(login_token) else {return Err(AppError::TokenInvalid)};
-        Ok(get_user_by_name(&mut self.db_connection, &username)?)
+        let conn = &mut &mut self.db_connection.get()?;
+        Ok(get_user_by_name(conn, &username)?)
     }
 
     fn get_username_for_token(&mut self, login_token: &LoginToken) -> Option<String> {
@@ -201,7 +212,7 @@ impl ActiveLogin {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LoginToken(String);
+pub struct LoginToken(pub String);
 
 /// Create a new user.
 ///
@@ -426,4 +437,17 @@ pub fn establish_connection() -> Result<SqliteConnection, DbError> {
         .or(Err(DbError::MigrationFailure))?;
 
     Ok(connection)
+}
+
+pub fn get_connection_pool() -> Result<Pool<ConnectionManager<SqliteConnection>>, DbError> {
+    let url = "data.db";
+    let manager = ConnectionManager::<SqliteConnection>::new(url);
+    // Refer to the `r2d2` documentation for more methods to use
+    // when building a connection pool
+    match Pool::builder()
+            .test_on_check_out(true)
+            .build(manager) {
+        Ok(pool) => Ok(pool),
+        Err(_) => {Err(DbError::ConnectionFailure)},
+    }
 }
