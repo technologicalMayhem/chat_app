@@ -8,6 +8,7 @@ use diesel::sqlite::SqliteConnection;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use models::{Message, NewMessage};
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::models::{Authentication, NewAuthentication, NewUser, User};
@@ -395,6 +396,7 @@ pub fn create_message(
     Ok(())
 }
 
+#[derive(Deserialize, Serialize)]
 pub enum MessageFilter {
     Before(DateTime<Local>),
     After(DateTime<Local>),

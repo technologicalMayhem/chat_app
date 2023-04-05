@@ -1,7 +1,8 @@
 use crate::schema::{authentications, messages, users};
 use diesel::{Insertable, Queryable, Selectable};
+use serde::Serialize;
 
-#[derive(Debug, Queryable, Selectable)]
+#[derive(Debug, Queryable, Selectable, Serialize)]
 pub struct User {
     pub id: i32,
     pub username: String,
@@ -14,7 +15,7 @@ pub struct Authentication {
     pub hashedpassword: String,
 }
 
-#[derive(Debug, Queryable)]
+#[derive(Debug, Queryable, Serialize)]
 pub struct Message {
     pub id: i32,
     pub date: String,
