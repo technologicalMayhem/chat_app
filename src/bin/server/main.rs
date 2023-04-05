@@ -43,7 +43,7 @@ fn rocket() -> _ {
     };
     rocket::build()
         .manage(app)
-        .mount("/auth", routes![login])
+        .mount("/auth", routes![login, logout])
         .mount("/", routes![name])
 }
 
@@ -56,12 +56,21 @@ async fn login(app: &State<Mutex<ChatApp>>,login_form: Json<LoginForm>) -> Resul
     }
 }
 
-#[get("/sayMyName")]
-async fn name(user: ReqUser) -> String {
-    format!("You are {}", user.0.username)
+#[get("/logout")]
+async fn logout(app: &State<Mutex<ChatApp>>, user: ReqUser) {
+    let mut app = app.lock().await;
+    app.logout(&user.token);
 }
 
-struct ReqUser(User);
+#[get("/sayMyName")]
+async fn name(user: ReqUser) -> String {
+    format!("You are {}", user.user.username)
+}
+
+struct ReqUser{
+    user: User,
+    token: LoginToken,
+}
 
 #[derive(Debug)]
 enum ApiKeyError {
@@ -92,6 +101,6 @@ impl<'r> FromRequest<'r> for ReqUser {
             return Outcome::Failure((Status::Forbidden, ApiKeyError::Invalid))
         };
 
-        Outcome::Success(ReqUser(user))
+        Outcome::Success(ReqUser{user, token: login_token})
     }
 }
