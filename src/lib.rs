@@ -157,7 +157,7 @@ impl ChatApp {
         Ok(get_user_by_id(conn, id)?)
     }
 
-    fn get_user_for_token(&mut self, login_token: &LoginToken) -> Result<User, AppError> {
+    pub fn get_user_for_token(&mut self, login_token: &LoginToken) -> Result<User, AppError> {
         let Some(username) = self.get_username_for_token(login_token) else {return Err(AppError::TokenInvalid)};
         let conn = &mut &mut self.db_connection.get()?;
         Ok(get_user_by_name(conn, &username)?)
