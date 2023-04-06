@@ -123,12 +123,10 @@ impl ChatApp {
         &mut self,
         login_token: &LoginToken,
         message: &str,
-    ) -> Result<(), AppError> {
+    ) -> Result<Message, AppError> {
         let user = self.get_user_for_token(login_token)?;
         let conn = &mut &mut self.db_connection.get()?;
-        create_message(conn, message, user.id)?;
-
-        Ok(())
+        Ok(create_message(conn, message, user.id)?)
     }
 
     /// Get the messages to show the user.
@@ -382,18 +380,18 @@ pub fn create_message(
     conn: &mut SqliteConnection,
     message: &str,
     userid: i32,
-) -> Result<(), DbError> {
+) -> Result<Message, DbError> {
     let date = Local::now();
     let new_message = NewMessage {
         date: date.to_rfc3339(),
         messagetext: message.into(),
         userid,
     };
-    diesel::insert_into(schema::messages::table)
+    let mut result: Vec<Message> = diesel::insert_into(schema::messages::table)
         .values(new_message)
-        .execute(conn)?;
+        .get_results(conn)?;
 
-    Ok(())
+    Ok(result.pop().unwrap())
 }
 
 #[derive(Deserialize, Serialize)]

@@ -15,7 +15,7 @@ pub struct Authentication {
     pub hashedpassword: String,
 }
 
-#[derive(Debug, Queryable, Serialize)]
+#[derive(Debug, Queryable, Serialize, Clone)]
 pub struct Message {
     pub id: i32,
     pub date: String,

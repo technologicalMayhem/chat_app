@@ -1,18 +1,18 @@
 #![allow(clippy::let_unit_value)]
 use std::io::Cursor;
 
-use chat_app::models::{Message};
-use chat_app::{ChatApp, LoginToken, MessageFilter, AppError, DbError};
+use chat_app::models::Message;
+use chat_app::{AppError, ChatApp, DbError, LoginToken, MessageFilter};
 use rocket::futures::lock::Mutex;
 use rocket::http::Status;
 use rocket::request::{FromRequest, Outcome};
-use rocket::response::status::{Unauthorized};
-use rocket::response::stream::EventStream;
-use rocket::response::{Responder, self};
+use rocket::response::status::Unauthorized;
+use rocket::response::stream::{Event, EventStream};
+use rocket::response::{self, Responder};
 use rocket::serde::json::Json;
+use rocket::tokio::sync::broadcast::{self, Receiver, Sender};
 use rocket::{Request, Response, State};
 use serde::{Deserialize, Serialize};
-
 
 #[macro_use]
 extern crate rocket;
@@ -29,6 +29,18 @@ struct Credentials {
     password: String,
 }
 
+struct MessageBroadcast {
+    tx: Sender<Message>,
+    rx: Receiver<Message>,
+}
+
+impl MessageBroadcast {
+    fn new() -> Self {
+        let (tx, rx) = broadcast::channel(16);
+        Self { tx, rx }
+    }
+}
+
 #[launch]
 fn rocket() -> _ {
     let app = match ChatApp::new() {
@@ -40,22 +52,28 @@ fn rocket() -> _ {
     };
     rocket::build()
         .manage(app)
+        .manage(MessageBroadcast::new())
         .mount("/auth", routes![login, logout])
-        .mount("/", routes![send_message, get_messages, get_user, register])
+        .mount("/", routes![send_message, get_messages, get_user, register, events])
 }
 
 enum RegisterResult {
     Registered,
     UsernameTaken,
-    Error
+    Error,
 }
 
 impl<'r> Responder<'r, 'static> for RegisterResult {
     fn respond_to(self, _request: &'r Request<'_>) -> response::Result<'static> {
         match self {
             RegisterResult::Registered => Ok(Response::build().status(Status::Ok).finalize()),
-            RegisterResult::UsernameTaken => Ok(Response::build().status(Status::Conflict).streamed_body(Cursor::new("Username is already taken.")).finalize()),
-            RegisterResult::Error => Ok(Response::build().status(Status::InternalServerError).finalize()),
+            RegisterResult::UsernameTaken => Ok(Response::build()
+                .status(Status::Conflict)
+                .streamed_body(Cursor::new("Username is already taken."))
+                .finalize()),
+            RegisterResult::Error => Ok(Response::build()
+                .status(Status::InternalServerError)
+                .finalize()),
         }
     }
 }
@@ -66,7 +84,7 @@ async fn register(app: &State<Mutex<ChatApp>>, credentials: Json<Credentials>) -
     match app.register(&credentials.username, &credentials.password) {
         Ok(_) => RegisterResult::Registered,
         Err(AppError::DatabaseError(DbError::UsernameInUse)) => RegisterResult::UsernameTaken,
-        _ => RegisterResult::Error
+        _ => RegisterResult::Error,
     }
 }
 
@@ -93,12 +111,16 @@ async fn logout(app: &State<Mutex<ChatApp>>, user: AppUser) {
 #[post("/message", data = "<message>")]
 async fn send_message(
     app: &State<Mutex<ChatApp>>,
+    broadcast: &State<MessageBroadcast>,
     user: AppUser,
     message: &str,
 ) -> Result<(), Status> {
     let mut app = app.lock().await;
     match app.send_message(&user.token, message) {
-        Ok(_) => Ok(()),
+        Ok(message) => {
+            let _ = broadcast.tx.send(message);
+            Ok(())
+        }
         _ => Err(Status::InternalServerError),
     }
 }
@@ -121,13 +143,23 @@ async fn get_user(app: &State<Mutex<ChatApp>>, ids: Json<Vec<i32>>) -> Json<Vec<
     let mut app = app.lock().await;
     let names = ids
         .iter()
-        .map(|id| {
-            app.get_user_by_id(*id)
-                .ok()
-                .map(|user| user.username)
-        })
+        .map(|id| app.get_user_by_id(*id).ok().map(|user| user.username))
         .collect();
     Json(names)
+}
+
+#[get("/events")]
+async fn events(_user: AppUser, broadcast: &State<MessageBroadcast>) -> EventStream![] {
+    let mut rx = broadcast.rx.resubscribe();
+    EventStream! {
+        loop {
+            let message = rx.recv().await;
+            match message {
+                Ok(message) => {yield Event::json(&message)},
+                Err(_) => return ,
+            };
+        }
+    }
 }
 
 struct AppUser {
@@ -163,8 +195,6 @@ impl<'r> FromRequest<'r> for AppUser {
             return Outcome::Failure((Status::Forbidden, ApiKeyError::Invalid))
         };
 
-        Outcome::Success(AppUser {
-            token: login_token,
-        })
+        Outcome::Success(AppUser { token: login_token })
     }
 }
