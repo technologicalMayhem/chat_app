@@ -25,9 +25,11 @@ use tui::{
     widgets::{Paragraph, Tabs},
     Frame, Terminal,
 };
+use ureq::post;
 
 mod collections;
 mod screens;
+mod client;
 
 fn main() -> Result<()> {
     // setup terminal

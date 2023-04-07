@@ -1,6 +1,7 @@
 use crate::schema::{authentications, messages, users};
 use diesel::{Insertable, Queryable, Selectable};
-use serde::Serialize;
+use rocket::response::Responder;
+use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Queryable, Selectable, Serialize)]
 pub struct User {
@@ -42,4 +43,16 @@ pub struct NewMessage {
     pub date: String,
     pub messagetext: String,
     pub userid: i32,
+}
+
+#[derive(Responder, Serialize, Deserialize)]
+#[response(content_type = "json")]
+pub struct LoginResult {
+    pub token: String,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct Credentials {
+    pub username: String,
+    pub password: String,
 }

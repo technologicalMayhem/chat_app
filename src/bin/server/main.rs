@@ -1,7 +1,7 @@
 #![allow(clippy::let_unit_value)]
 use std::io::Cursor;
 
-use chat_app::models::Message;
+use chat_app::models::{Message, LoginResult, Credentials};
 use chat_app::{AppError, ChatApp, DbError, LoginToken, MessageFilter};
 use rocket::futures::lock::Mutex;
 use rocket::http::Status;
@@ -12,22 +12,10 @@ use rocket::response::{self, Responder};
 use rocket::serde::json::Json;
 use rocket::tokio::sync::broadcast::{self, Receiver, Sender};
 use rocket::{Request, Response, State};
-use serde::{Deserialize, Serialize};
+
 
 #[macro_use]
 extern crate rocket;
-
-#[derive(Responder, Serialize)]
-#[response(content_type = "json")]
-struct LoginResult {
-    token: String,
-}
-
-#[derive(Deserialize)]
-struct Credentials {
-    username: String,
-    password: String,
-}
 
 struct MessageBroadcast {
     tx: Sender<Message>,
