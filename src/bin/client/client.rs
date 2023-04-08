@@ -85,11 +85,11 @@ impl Client {
             .send()
             .await
         {
+            Ok(response) if response.status() == StatusCode::UNAUTHORIZED => return Err(Error::LoginFailed),
             Ok(response) => response
                 .json()
                 .await
                 .map_err(Error::DeserializingFailed)?,
-            Err(e) if e.status() == Some(StatusCode::UNAUTHORIZED) => return Err(Error::LoginFailed),
             Err(e) => return Err(Self::handle_error(e, endpoint)),
         };
 
