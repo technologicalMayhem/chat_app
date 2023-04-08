@@ -1,4 +1,5 @@
 #![allow(clippy::let_unit_value)]
+#![allow(clippy::no_effect_underscore_binding)]
 use std::collections::HashMap;
 use std::io::Cursor;
 
