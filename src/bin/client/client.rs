@@ -33,9 +33,7 @@ pub enum Error {
     #[error("Failed to deserialize data received from the server. This is a bug.")]
     DeserializingFailed(reqwest::Error),
     #[error("Could not register. The username is already in use.")]
-    UsernameInUse,
-    #[error("Could not register. A unknown error occured.")]
-    RegistrationFailed,
+    UsernameInUse
 }
 
 pub struct Client {

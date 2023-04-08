@@ -2,8 +2,8 @@ use crossterm::event::{Event, KeyCode, KeyEvent};
 use tui::{
     buffer::Buffer,
     layout::{Alignment::Center, Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
-    text::{Span, Text},
+    style::{Color, Modifier, Style},
+    text::{Span, Spans, Text},
     widgets::{Block, Borders, List, ListItem, Paragraph, Widget},
 };
 
@@ -34,17 +34,28 @@ struct ChatWindow {
 /// Holds the current state of the login window.
 #[derive(Clone)]
 struct LoginWindow {
+    address: FormElement,
     username: FormElement,
     password: FormElement,
+    intent: Intent,
     focus: LoginWindowFocus,
     status_message: Option<String>,
+}
+
+/// What does the user wanna do when they hit enter?
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Intent {
+    Login,
+    Register,
 }
 
 /// Keeps track of what element in the ``LoginWindow`` is currently in focus.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum LoginWindowFocus {
+    Address,
     Username,
     Pasword,
+    Intent,
 }
 
 /// Represents a form element in a ui screen.
@@ -78,9 +89,11 @@ impl Window {
     pub fn new() -> Self {
         Self {
             state: MenuState::Login(LoginWindow {
+                address: FormElement::new("Server Address", Visibilty::Visible),
                 username: FormElement::new("Username", Visibilty::Visible),
                 password: FormElement::new("Password", Visibilty::Hidden),
-                focus: LoginWindowFocus::Username,
+                intent: Intent::Login,
+                focus: LoginWindowFocus::Address,
                 status_message: None,
             }),
         }
@@ -112,8 +125,10 @@ impl Window {
                     match code {
                         KeyCode::Enter => {
                             if let Some(session_data) = data.logins.get(&chat.title) {
-                                let result =
-                                    session_data.client.send_message(&chat.message_composer).await;
+                                let result = session_data
+                                    .client
+                                    .send_message(&chat.message_composer)
+                                    .await;
                                 let message = if let Err(e) = result {
                                     format!("Could not send message: {e}")
                                 } else {
@@ -147,14 +162,49 @@ impl Window {
                 }) = event
                 {
                     match code {
-                        KeyCode::Up => form.focus = LoginWindowFocus::Username,
-                        KeyCode::Down => form.focus = LoginWindowFocus::Pasword,
+                        KeyCode::Up => {
+                            form.focus = match form.focus {
+                                LoginWindowFocus::Address | LoginWindowFocus::Username => {
+                                    LoginWindowFocus::Address
+                                }
+                                LoginWindowFocus::Pasword => LoginWindowFocus::Username,
+                                LoginWindowFocus::Intent => LoginWindowFocus::Pasword,
+                            }
+                        }
+                        KeyCode::Down => {
+                            form.focus = match form.focus {
+                                LoginWindowFocus::Address => LoginWindowFocus::Username,
+                                LoginWindowFocus::Username => LoginWindowFocus::Pasword,
+                                LoginWindowFocus::Pasword | LoginWindowFocus::Intent => {
+                                    LoginWindowFocus::Intent
+                                }
+                            }
+                        }
+                        KeyCode::Left if form.focus == LoginWindowFocus::Intent => {
+                            form.intent = Intent::Login;
+                        }
+                        KeyCode::Right if form.focus == LoginWindowFocus::Intent => {
+                            form.intent = Intent::Register;
+                        }
                         KeyCode::Enter => {
-                            match Client::login(
-                                "localhost:8000",
-                                &form.username.content,
-                                &form.password.content,
-                            ).await {
+                            match match form.intent {
+                                Intent::Login => {
+                                    Client::login(
+                                        &form.address.content,
+                                        &form.username.content,
+                                        &form.password.content,
+                                    )
+                                    .await
+                                }
+                                Intent::Register => {
+                                    Client::register(
+                                        &form.address.content,
+                                        &form.username.content,
+                                        &form.password.content,
+                                    )
+                                    .await
+                                }
+                            } {
                                 Ok(client) => {
                                     let username = &form.username.content;
                                     match SessionData::new(client).await {
@@ -179,13 +229,23 @@ impl Window {
                             }
                         }
                         KeyCode::Char(c) => match form.focus {
+                            LoginWindowFocus::Address => form.address.content.push(*c),
                             LoginWindowFocus::Username => form.username.content.push(*c),
                             LoginWindowFocus::Pasword => form.password.content.push(*c),
+                            LoginWindowFocus::Intent => {}
                         },
                         KeyCode::Backspace => {
                             match form.focus {
-                                LoginWindowFocus::Username => form.username.content.pop(),
-                                LoginWindowFocus::Pasword => form.password.content.pop(),
+                                LoginWindowFocus::Address => {
+                                    form.address.content.pop();
+                                }
+                                LoginWindowFocus::Username => {
+                                    form.username.content.pop();
+                                }
+                                LoginWindowFocus::Pasword => {
+                                    form.password.content.pop();
+                                }
+                                LoginWindowFocus::Intent => {}
                             };
                         }
                         _ => {}
@@ -265,25 +325,52 @@ impl Widget for Window {
                     .constraints([
                         Constraint::Length(3),
                         Constraint::Length(3),
+                        Constraint::Length(3),
+                        Constraint::Length(1),
                         Constraint::Length(1),
                         Constraint::Length(1),
                     ])
                     .split(inner);
 
-                form_element_ui(&login.username, login.focus == LoginWindowFocus::Username)
+                form_element_ui(&login.address, login.focus == LoginWindowFocus::Address)
                     .render(layout[0], buf);
-                form_element_ui(&login.password, login.focus == LoginWindowFocus::Pasword)
+                form_element_ui(&login.username, login.focus == LoginWindowFocus::Username)
                     .render(layout[1], buf);
+                form_element_ui(&login.password, login.focus == LoginWindowFocus::Pasword)
+                    .render(layout[2], buf);
+
+                let style = if login.focus == LoginWindowFocus::Intent {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default()
+                };
+                let (login_style, register_style) = match login.intent {
+                    Intent::Login => (
+                        style.add_modifier(Modifier::UNDERLINED),
+                        style.fg(Color::DarkGray),
+                    ),
+                    Intent::Register => (
+                        style.fg(Color::DarkGray),
+                        style.add_modifier(Modifier::UNDERLINED),
+                    ),
+                };
+
+                Paragraph::new(Spans::from(vec![
+                    Span::styled("Login as a existing user", login_style),
+                    Span::styled(" | ", Style::default()),
+                    Span::styled("Register as a new user", register_style),
+                ]))
+                .render(layout[3], buf);
 
                 if let Some(message) = login.status_message {
                     Paragraph::new(Span::styled(message, Style::default()))
                         .alignment(Center)
-                        .render(layout[2], buf);
+                        .render(layout[4], buf);
                 }
 
                 Paragraph::new(Span::styled("Press Enter to submit.", Style::default()))
                     .alignment(Center)
-                    .render(layout[3], buf);
+                    .render(layout[5], buf);
             }
         }
     }
