@@ -3,8 +3,8 @@ use std::time::{Duration, SystemTime};
 use base64::Engine;
 use chrono::{DateTime, Local};
 use diesel::r2d2::ConnectionManager;
-use diesel::{prelude::*, r2d2::Pool};
 use diesel::sqlite::SqliteConnection;
+use diesel::{prelude::*, r2d2::Pool};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use models::{Message, NewMessage};
 use rand::Rng;
@@ -260,11 +260,11 @@ pub fn get_user_by_name(conn: &mut SqliteConnection, name: &str) -> Result<User,
     }
 }
 
-    /// Gets the user with that id.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the user does not exist.
+/// Gets the user with that id.
+///
+/// # Errors
+///
+/// This function will return an error if the user does not exist.
 pub fn get_user_by_id(conn: &mut SqliteConnection, id: i32) -> Result<User, DbError> {
     use crate::schema::users::dsl::{id as user_id, users};
 
@@ -460,10 +460,14 @@ pub fn get_connection_pool() -> Result<Pool<ConnectionManager<SqliteConnection>>
     let manager = ConnectionManager::<SqliteConnection>::new(url);
     // Refer to the `r2d2` documentation for more methods to use
     // when building a connection pool
-    match Pool::builder()
+    let Ok(pool) = Pool::builder()
             .test_on_check_out(true)
-            .build(manager) {
-        Ok(pool) => Ok(pool),
-        Err(_) => {Err(DbError::ConnectionFailure)},
+            .build(manager) else { return Err(DbError::ConnectionFailure) };
+
+    if let Some(mut conn) = pool.try_get() {
+        conn.run_pending_migrations(MIGRATIONS)
+            .or(Err(DbError::MigrationFailure))?;
     }
+
+    Ok(pool)
 }
