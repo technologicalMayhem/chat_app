@@ -158,6 +158,11 @@ impl ChatApp {
         Ok(get_user_by_id(conn, id)?)
     }
 
+    /// Gets the user that is logged in with that token.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the token is not in use.
     pub fn get_user_for_token(&mut self, login_token: &LoginToken) -> Result<User, AppError> {
         let Some(username) = self.get_username_for_token(login_token) else {return Err(AppError::TokenInvalid)};
         let conn = &mut self.db_connection.get()?;
@@ -445,6 +450,11 @@ pub fn establish_connection() -> Result<SqliteConnection, DbError> {
     Ok(connection)
 }
 
+/// Create a connection pool to interact with the database.
+///
+/// # Errors
+///
+/// This function will return an error if a connection pool could not be created.
 pub fn get_connection_pool() -> Result<Pool<ConnectionManager<SqliteConnection>>, DbError> {
     let url = "data.db";
     let manager = ConnectionManager::<SqliteConnection>::new(url);
