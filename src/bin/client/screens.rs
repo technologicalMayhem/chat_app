@@ -295,9 +295,13 @@ impl Widget for Window {
                     ])
                     .split(inner);
 
+                let message_count = (layout[0].height - 2) as usize;
                 let items: Vec<ListItem> = chat
                     .message_list
                     .iter()
+                    .rev() // First reverse the order
+                    .take(message_count) // So we can take out the last n elements
+                    .rev() // Then reverse it again so it's in the correct order again
                     .map(|m| ListItem::new(Text::from(m.clone())))
                     .collect();
                 tui::widgets::Widget::render(
