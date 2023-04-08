@@ -1,11 +1,14 @@
 use std::{
+    cmp::Ordering,
     collections::HashMap,
     io::{self},
+    sync::mpsc::Receiver,
     time::Duration,
 };
 
-use chat_app::{models::Message, ChatApp, LoginToken, MessageFilter};
-use chrono::{DateTime, Local};
+use chat_app::{models::Message, MessageFilter};
+use chrono::Local;
+use client::Client;
 use collections::ActiveVec;
 
 use crossterm::{
@@ -25,13 +28,13 @@ use tui::{
     widgets::{Paragraph, Tabs},
     Frame, Terminal,
 };
-use ureq::post;
 
+mod client;
 mod collections;
 mod screens;
-mod client;
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -40,8 +43,15 @@ fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // create app and run it
-    let mut app = App::new()?;
-    run_app(&mut terminal, &mut app)?;
+    let mut app = App::new();
+    run_app(&mut terminal, &mut app).await?;
+    // logout all clients
+    for (username, session) in app.chat.logins {
+        let result = session.client.logout().await;
+        if let Err(e) = result {
+            println!("Error whilst logging out as {username}: {e}");
+        }
+    }
 
     // restore terminal
     disable_raw_mode()?;
@@ -56,10 +66,10 @@ fn main() -> Result<()> {
 }
 
 /// Main loop for running the app.
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
+async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
     loop {
         for session in app.chat.logins.values_mut() {
-            session.update(&mut app.chat.chat_app)?;
+            session.update().await?;
         }
 
         if let Some(screen) = app.screens.get_active_mut() {
@@ -103,7 +113,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
                     } => app.screens.prev(),
                     _ => {
                         if let Some(screen) = app.screens.get_active_mut() {
-                            screen.handle_input(&mut app.chat, &event);
+                            screen.handle_input(&mut app.chat, &event).await;
                         }
                     }
                 }
@@ -181,34 +191,31 @@ struct App {
 
 /// Holds the data relating to the current state of the application
 struct ChatData {
-    chat_app: ChatApp,
     logins: HashMap<String, SessionData>,
 }
 
 /// Holds the data for a users session.
 struct SessionData {
-    token: LoginToken,
-    last_update: DateTime<Local>,
+    client: Client,
+    events: Receiver<Message>,
     messages: Vec<Message>,
     known_usernames: HashMap<i32, String>,
 }
 
-
 impl App {
     /// Create a new instance of ``App``.
-    fn new() -> Result<Self> {
+    fn new() -> Self {
         let mut screen: ActiveVec<Window> = ActiveVec::new();
         screen.push(Window::new());
 
         let chat = ChatData {
-            chat_app: ChatApp::new()?,
             logins: HashMap::new(),
         };
 
-        Ok(App {
+        App {
             chat,
             screens: screen,
-        })
+        }
     }
 
     /// Get the ``TabTitle``s to show.
@@ -233,43 +240,68 @@ impl App {
 
 impl SessionData {
     /// Creates a new instance of ``SessionData`` and populates it with chat messages
-    fn new(app: &mut ChatApp, token: LoginToken) -> Result<Self> {
+    async fn new(client: Client) -> Result<Self> {
+        let events = client.get_events()?;
         let now = Local::now();
-        let messages = app.get_messages(&token, &MessageFilter::Before(now))?;
-        let mut known_usernames: HashMap<i32, String> = HashMap::new();
-        for msg in &messages {
-            if !known_usernames.contains_key(&msg.userid) {
-                if let Ok(user) = app.get_user_by_id(msg.userid) {
-                    known_usernames.insert(user.id, user.username);
-                }
-            }
-        }
-
-        Ok(Self {
-            token,
-            last_update: now,
+        let mut messages = client.get_messages(MessageFilter::Before(now)).await?;
+        messages.sort_by(Self::sort_messages);
+        let known_usernames: HashMap<i32, String> = HashMap::new();
+        let mut session = Self {
+            client,
+            events,
             messages,
             known_usernames,
-        })
+        };
+
+        session.update_names().await?;
+
+        Ok(session)
     }
 
     /// Updates the sessions states and adds new messages if available.
-    fn update(&mut self, app: &mut ChatApp) -> Result<()> {
-        let now = Local::now();
-        let mut messages =
-            app.get_messages(&self.token, &MessageFilter::After(self.last_update))?;
-        if !messages.is_empty() {
-            for msg in &messages {
-                if !self.known_usernames.contains_key(&msg.userid) {
-                    if let Ok(user) = app.get_user_by_id(msg.userid) {
-                        self.known_usernames.insert(user.id, user.username);
+    async fn update(&mut self) -> Result<()> {
+        loop {
+            let message = match self.events.try_recv() {
+                Ok(message) => message,
+                Err(e) => match e {
+                    std::sync::mpsc::TryRecvError::Empty => break,
+                    std::sync::mpsc::TryRecvError::Disconnected => {
+                        return Err(eyre::eyre!("Server disconnected!"))
                     }
+                },
+            };
+
+            self.messages.push(message);
+        }
+
+        self.update_names().await?;
+
+        Ok(())
+    }
+
+    async fn update_names(&mut self) -> Result<()> {
+        let mut missing_ids: Vec<i32> = self
+            .messages
+            .iter()
+            .filter_map(|m| {
+                if self.known_usernames.contains_key(&m.userid) {
+                    None
+                } else {
+                    Some(m.userid)
                 }
-            }
-            self.messages.append(&mut messages);
-            self.last_update = now;
+            })
+            .collect();
+
+        if !missing_ids.is_empty() {
+            missing_ids.dedup();
+            let users = self.client.get_users(&missing_ids).await?;
+            self.known_usernames.extend(users);
         }
 
         Ok(())
+    }
+
+    fn sort_messages(a: &Message, b: &Message) -> Ordering {
+        a.date.cmp(&b.date)
     }
 }

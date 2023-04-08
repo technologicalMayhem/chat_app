@@ -35,6 +35,8 @@ pub enum DbError {
     UsernameCollisionDetected,
     #[error("Could not find a user with that name")]
     UserNotFound,
+    #[error("Database did not return item when inserting")]
+    NoReturnOnInsert,
     #[error("The underlying database engine encountered an error")]
     GenericError(#[from] diesel::result::Error),
     #[error("Failed to create connection pool")]
@@ -91,7 +93,7 @@ impl ChatApp {
     ///
     /// This function will return an error if the authentication failed.
     pub fn login(&mut self, username: &str, password: &str) -> Result<LoginToken, AppError> {
-        let conn = &mut &mut self.db_connection.get()?;
+        let conn = &mut self.db_connection.get()?;
         if check_password(conn, username, password)? {
             let active_login = ActiveLogin::new(username);
             let login_token = active_login.token.clone();
@@ -125,7 +127,7 @@ impl ChatApp {
         message: &str,
     ) -> Result<Message, AppError> {
         let user = self.get_user_for_token(login_token)?;
-        let conn = &mut &mut self.db_connection.get()?;
+        let conn = &mut self.db_connection.get()?;
         Ok(create_message(conn, message, user.id)?)
     }
 
@@ -142,7 +144,7 @@ impl ChatApp {
         if self.get_username_for_token(login_token).is_none() {
             return Err(AppError::TokenInvalid);
         }
-        let conn = &mut &mut self.db_connection.get()?;
+        let conn = &mut self.db_connection.get()?;
         Ok(get_messages(conn, filter)?)
     }
 
@@ -152,13 +154,13 @@ impl ChatApp {
     ///
     /// This function will return an error if the user does not exist.
     pub fn get_user_by_id(&mut self, id: i32) -> Result<User, AppError> {
-        let conn = &mut &mut self.db_connection.get()?;
+        let conn = &mut self.db_connection.get()?;
         Ok(get_user_by_id(conn, id)?)
     }
 
     pub fn get_user_for_token(&mut self, login_token: &LoginToken) -> Result<User, AppError> {
         let Some(username) = self.get_username_for_token(login_token) else {return Err(AppError::TokenInvalid)};
-        let conn = &mut &mut self.db_connection.get()?;
+        let conn = &mut self.db_connection.get()?;
         Ok(get_user_by_name(conn, &username)?)
     }
 
@@ -383,7 +385,7 @@ pub fn create_message(
 ) -> Result<Message, DbError> {
     let date = Local::now();
     let new_message = NewMessage {
-        date: date.to_rfc3339(),
+        date: date.naive_local(),
         messagetext: message.into(),
         userid,
     };
@@ -391,7 +393,11 @@ pub fn create_message(
         .values(new_message)
         .get_results(conn)?;
 
-    Ok(result.pop().unwrap())
+    if let Some(message) = result.pop() {
+        Ok(message)
+    } else {
+        Err(DbError::NoReturnOnInsert)
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -410,7 +416,7 @@ pub fn get_messages(
     filter: &MessageFilter,
 ) -> Result<Vec<Message>, DbError> {
     use schema::messages::dsl::{date, messages};
-    let query = messages.order_by(date).limit(20);
+    let query = messages.order_by(date.desc()).limit(20);
 
     let result = match filter {
         MessageFilter::Before(before) => query

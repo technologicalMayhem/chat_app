@@ -13,7 +13,7 @@ CREATE TABLE authentications (
 
 CREATE TABLE messages (
     id INTEGER NOT NULL PRIMARY KEY,
-    date DATE NOT NULL,
+    date TIMESTAMP NOT NULL,
     messagetext TEXT NOT NULL,
     userid INTEGER NOT NULL,
     FOREIGN KEY(userid) REFERENCES user(userid)

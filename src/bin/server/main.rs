@@ -1,8 +1,11 @@
 #![allow(clippy::let_unit_value)]
+use std::collections::HashMap;
 use std::io::Cursor;
 
 use chat_app::models::{Message, LoginResult, Credentials};
 use chat_app::{AppError, ChatApp, DbError, LoginToken, MessageFilter};
+use chrono::{DateTime, Local};
+use rocket::form::FromFormField;
 use rocket::futures::lock::Mutex;
 use rocket::http::Status;
 use rocket::request::{FromRequest, Outcome};
@@ -12,7 +15,6 @@ use rocket::response::{self, Responder};
 use rocket::serde::json::Json;
 use rocket::tokio::sync::broadcast::{self, Receiver, Sender};
 use rocket::{Request, Response, State};
-
 
 #[macro_use]
 extern crate rocket;
@@ -113,7 +115,7 @@ async fn send_message(
     }
 }
 
-#[get("/message", data = "<filter>")]
+#[post("/messages", data = "<filter>")]
 async fn get_messages(
     app: &State<Mutex<ChatApp>>,
     user: AppUser,
@@ -126,12 +128,15 @@ async fn get_messages(
     }
 }
 
-#[get("/user", data = "<ids>")]
-async fn get_user(app: &State<Mutex<ChatApp>>, ids: Json<Vec<i32>>) -> Json<Vec<Option<String>>> {
+#[post("/user", data = "<ids>")]
+async fn get_user(app: &State<Mutex<ChatApp>>, ids: Json<Vec<i32>>) -> Json<HashMap<i32, Option<String>>> {
     let mut app = app.lock().await;
     let names = ids
         .iter()
-        .map(|id| app.get_user_by_id(*id).ok().map(|user| user.username))
+        .map(|id| {
+            let username = app.get_user_by_id(*id).ok().map(|user| user.username);
+            (*id, username)
+        })
         .collect();
     Json(names)
 }
@@ -158,6 +163,13 @@ struct AppUser {
 enum ApiKeyError {
     Missing,
     Invalid,
+}
+
+struct FormDateTime(DateTime<Local>);
+
+#[rocket::async_trait]
+impl<'r> FromFormField<'r> for FormDateTime {
+    
 }
 
 #[rocket::async_trait]

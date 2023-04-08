@@ -11,7 +11,7 @@ diesel::table! {
 diesel::table! {
     messages (id) {
         id -> Integer,
-        date -> Date,
+        date -> Timestamp,
         messagetext -> Text,
         userid -> Integer,
     }
@@ -24,4 +24,8 @@ diesel::table! {
     }
 }
 
-diesel::allow_tables_to_appear_in_same_query!(authentications, messages, users,);
+diesel::allow_tables_to_appear_in_same_query!(
+    authentications,
+    messages,
+    users,
+);

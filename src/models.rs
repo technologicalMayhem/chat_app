@@ -1,4 +1,5 @@
 use crate::schema::{authentications, messages, users};
+use chrono::NaiveDateTime;
 use diesel::{Insertable, Queryable, Selectable};
 use rocket::response::Responder;
 use serde::{Serialize, Deserialize};
@@ -16,10 +17,10 @@ pub struct Authentication {
     pub hashedpassword: String,
 }
 
-#[derive(Debug, Queryable, Serialize, Clone)]
+#[derive(Debug, Queryable, Serialize, Deserialize, Clone)]
 pub struct Message {
     pub id: i32,
-    pub date: String,
+    pub date: NaiveDateTime,
     pub messagetext: String,
     pub userid: i32,
 }
@@ -40,7 +41,7 @@ pub struct NewAuthentication {
 #[derive(Insertable)]
 #[diesel(table_name = messages)]
 pub struct NewMessage {
-    pub date: String,
+    pub date: NaiveDateTime,
     pub messagetext: String,
     pub userid: i32,
 }

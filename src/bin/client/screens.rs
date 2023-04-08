@@ -7,7 +7,7 @@ use tui::{
     widgets::{Block, Borders, List, ListItem, Paragraph, Widget},
 };
 
-use crate::{ChatData, SessionData};
+use crate::{client::Client, ChatData, SessionData};
 
 /// Used to hold the current window state.
 #[derive(Clone)]
@@ -95,7 +95,7 @@ impl Window {
     }
 
     /// Handles the input for the window and apply changes to it and the ``ChatData`` as necessary.
-    pub(crate) fn handle_input(&mut self, data: &mut ChatData, event: &Event) {
+    pub(crate) async fn handle_input(&mut self, data: &mut ChatData, event: &Event) {
         match &mut self.state {
             // Handle input for the chat screen
             MenuState::Chat(chat) => {
@@ -112,10 +112,8 @@ impl Window {
                     match code {
                         KeyCode::Enter => {
                             if let Some(session_data) = data.logins.get(&chat.title) {
-                                let result = data
-                                    .chat_app
-                                    .send_message(&session_data.token, &chat.message_composer);
-
+                                let result =
+                                    session_data.client.send_message(&chat.message_composer).await;
                                 let message = if let Err(e) = result {
                                     format!("Could not send message: {e}")
                                 } else {
@@ -152,25 +150,32 @@ impl Window {
                         KeyCode::Up => form.focus = LoginWindowFocus::Username,
                         KeyCode::Down => form.focus = LoginWindowFocus::Pasword,
                         KeyCode::Enter => {
-                            if let Ok(token) = data
-                                .chat_app
-                                .login(&form.username.content, &form.password.content)
-                            {
-                                let username = &form.username.content;
-                                match SessionData::new(&mut data.chat_app, token) {
-                                    Ok(session) => {
-                                        data.logins.insert(username.clone(), session);
-                                        self.state = MenuState::Chat(ChatWindow {
-                                            title: username.clone(),
-                                            message_list: Vec::new(),
-                                            message_composer: String::new(),
-                                            status_message: None,
-                                        });
+                            match Client::login(
+                                "localhost:8000",
+                                &form.username.content,
+                                &form.password.content,
+                            ).await {
+                                Ok(client) => {
+                                    let username = &form.username.content;
+                                    match SessionData::new(client).await {
+                                        Ok(session) => {
+                                            data.logins.insert(username.clone(), session);
+                                            self.state = MenuState::Chat(ChatWindow {
+                                                title: username.clone(),
+                                                message_list: Vec::new(),
+                                                message_composer: String::new(),
+                                                status_message: None,
+                                            });
+                                        }
+                                        Err(e) => {
+                                            form.status_message =
+                                                Some(format!("Could not create session: {e}"));
+                                        }
                                     }
-                                    Err(e) => form.status_message = Some(format!("Could not create session: {e}")),
                                 }
-                            } else {
-                                form.status_message = Some("Login failed".into());
+                                Err(e) => {
+                                    form.status_message = Some(format!("Login failed. ({e})"));
+                                }
                             }
                         }
                         KeyCode::Char(c) => match form.focus {
@@ -206,8 +211,8 @@ impl Window {
                 }
 
                 chat.message_list = messages;
-            },
-            MenuState::Login(_) => {},
+            }
+            MenuState::Login(_) => {}
         }
     }
 }
