@@ -110,147 +110,124 @@ impl Window {
     /// Handles the input for the window and apply changes to it and the ``ChatData`` as necessary.
     pub(crate) async fn handle_input(&mut self, data: &mut ChatData, event: &Event) {
         match &mut self.state {
-            // Handle input for the chat screen
             MenuState::Chat(chat) => {
-                if chat.status_message.is_some() {
-                    chat.status_message = None;
-                }
-                if let Event::Key(KeyEvent {
-                    code,
-                    modifiers: _,
-                    kind: _,
-                    state: _,
-                }) = event
-                {
-                    match code {
-                        KeyCode::Enter => {
-                            if let Some(session_data) = data.logins.get(&chat.title) {
-                                let result = session_data
-                                    .client
-                                    .send_message(&chat.message_composer)
-                                    .await;
-                                let message = if let Err(e) = result {
-                                    format!("Could not send message: {e}")
-                                } else {
-                                    chat.message_composer.clear();
-                                    "Message sent.".into()
-                                };
+                handle_chat_window_input(chat, event, data).await;
+            }
+            MenuState::Login(form) => {
+                // Clone the state and passing it in like that is a bit awkward.
+                // But so far the best solution I could come up with as I otherwise
+                // need to pass in two mutable instances of self which causes a compiler error.
+                // There must be a better way to go about this, but I am not seeing it yet.
+                let mut form = form.clone();
+                self.handle_login_window_input(&mut form, event, data).await;
+                self.state = MenuState::Login(form);
+            }
+        }
+    }
 
-                                chat.status_message = Some(message);
-                            }
+    async fn handle_login_window_input(&mut self, form: &mut LoginWindow, event: &Event, data: &mut ChatData) {
+        if form.status_message.is_some() {
+            form.status_message = None;
+        }
+        if let Event::Key(KeyEvent {
+            code,
+            modifiers: _,
+            kind: _,
+            state: _,
+        }) = event
+        {
+            match code {
+                KeyCode::Up => {
+                    form.focus = match form.focus {
+                        LoginWindowFocus::Address | LoginWindowFocus::Username => {
+                            LoginWindowFocus::Address
                         }
-                        KeyCode::Char(c) => {
-                            chat.message_composer.push(*c);
+                        LoginWindowFocus::Pasword => LoginWindowFocus::Username,
+                        LoginWindowFocus::Intent => LoginWindowFocus::Pasword,
+                    };
+                },
+                KeyCode::Down => {
+                    form.focus = match form.focus {
+                        LoginWindowFocus::Address => LoginWindowFocus::Username,
+                        LoginWindowFocus::Username => LoginWindowFocus::Pasword,
+                        LoginWindowFocus::Pasword | LoginWindowFocus::Intent => {
+                            LoginWindowFocus::Intent
                         }
-                        KeyCode::Backspace => {
-                            chat.message_composer.pop();
+                    }
+                },
+                KeyCode::Left if form.focus == LoginWindowFocus::Intent => {
+                    form.intent = Intent::Login;
+                },
+                KeyCode::Right if form.focus == LoginWindowFocus::Intent => {
+                    form.intent = Intent::Register;
+                },
+                KeyCode::Enter => {
+                    self.submit_form(form, data).await;
+                },
+                KeyCode::Char(c) => match form.focus {
+                    LoginWindowFocus::Address => form.address.content.push(*c),
+                    LoginWindowFocus::Username => form.username.content.push(*c),
+                    LoginWindowFocus::Pasword => form.password.content.push(*c),
+                    LoginWindowFocus::Intent => {}
+                },
+                KeyCode::Backspace => {
+                    match form.focus {
+                        LoginWindowFocus::Address => {
+                            form.address.content.pop();
                         }
-                        _ => {}
+                        LoginWindowFocus::Username => {
+                            form.username.content.pop();
+                        }
+                        LoginWindowFocus::Pasword => {
+                            form.password.content.pop();
+                        }
+                        LoginWindowFocus::Intent => {}
+                    };
+                }
+                _ => {}
+            }
+        }
+    }
+
+    async fn submit_form(&mut self, form: &mut LoginWindow, data: &mut ChatData) {
+        match match form.intent {
+            Intent::Login => {
+                Client::login(
+                    &form.address.content,
+                    &form.username.content,
+                    &form.password.content,
+                )
+                .await
+            }
+            Intent::Register => {
+                Client::register(
+                    &form.address.content,
+                    &form.username.content,
+                    &form.password.content,
+                )
+                .await
+            }
+        } {
+            Ok(client) => {
+                let username = &form.username.content;
+                match SessionData::new(client).await {
+                    Ok(session) => {
+                        data.logins.insert(username.clone(), session);
+                        self.state = MenuState::Chat(ChatWindow {
+                            title: username.clone(),
+                            message_list: Vec::new(),
+                            message_composer: String::new(),
+                            status_message: None,
+                        });
+                    }
+                    Err(e) => {
+                        form.status_message =
+                            Some(format!("Could not create session: {e}"));
                     }
                 }
             }
-            // Handle input for the login screen
-            MenuState::Login(form) => {
-                if form.status_message.is_some() {
-                    form.status_message = None;
-                }
-                if let Event::Key(KeyEvent {
-                    code,
-                    modifiers: _,
-                    kind: _,
-                    state: _,
-                }) = event
-                {
-                    match code {
-                        KeyCode::Up => {
-                            form.focus = match form.focus {
-                                LoginWindowFocus::Address | LoginWindowFocus::Username => {
-                                    LoginWindowFocus::Address
-                                }
-                                LoginWindowFocus::Pasword => LoginWindowFocus::Username,
-                                LoginWindowFocus::Intent => LoginWindowFocus::Pasword,
-                            }
-                        }
-                        KeyCode::Down => {
-                            form.focus = match form.focus {
-                                LoginWindowFocus::Address => LoginWindowFocus::Username,
-                                LoginWindowFocus::Username => LoginWindowFocus::Pasword,
-                                LoginWindowFocus::Pasword | LoginWindowFocus::Intent => {
-                                    LoginWindowFocus::Intent
-                                }
-                            }
-                        }
-                        KeyCode::Left if form.focus == LoginWindowFocus::Intent => {
-                            form.intent = Intent::Login;
-                        }
-                        KeyCode::Right if form.focus == LoginWindowFocus::Intent => {
-                            form.intent = Intent::Register;
-                        }
-                        KeyCode::Enter => {
-                            match match form.intent {
-                                Intent::Login => {
-                                    Client::login(
-                                        &form.address.content,
-                                        &form.username.content,
-                                        &form.password.content,
-                                    )
-                                    .await
-                                }
-                                Intent::Register => {
-                                    Client::register(
-                                        &form.address.content,
-                                        &form.username.content,
-                                        &form.password.content,
-                                    )
-                                    .await
-                                }
-                            } {
-                                Ok(client) => {
-                                    let username = &form.username.content;
-                                    match SessionData::new(client).await {
-                                        Ok(session) => {
-                                            data.logins.insert(username.clone(), session);
-                                            self.state = MenuState::Chat(ChatWindow {
-                                                title: username.clone(),
-                                                message_list: Vec::new(),
-                                                message_composer: String::new(),
-                                                status_message: None,
-                                            });
-                                        }
-                                        Err(e) => {
-                                            form.status_message =
-                                                Some(format!("Could not create session: {e}"));
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    form.status_message = Some(format!("Login failed. ({e})"));
-                                }
-                            }
-                        }
-                        KeyCode::Char(c) => match form.focus {
-                            LoginWindowFocus::Address => form.address.content.push(*c),
-                            LoginWindowFocus::Username => form.username.content.push(*c),
-                            LoginWindowFocus::Pasword => form.password.content.push(*c),
-                            LoginWindowFocus::Intent => {}
-                        },
-                        KeyCode::Backspace => {
-                            match form.focus {
-                                LoginWindowFocus::Address => {
-                                    form.address.content.pop();
-                                }
-                                LoginWindowFocus::Username => {
-                                    form.username.content.pop();
-                                }
-                                LoginWindowFocus::Pasword => {
-                                    form.password.content.pop();
-                                }
-                                LoginWindowFocus::Intent => {}
-                            };
-                        }
-                        _ => {}
-                    }
-                }
+            Err(e) => {
+                form.status_message = Some(format!("Login failed. ({e})"));
             }
         }
     }
@@ -273,6 +250,45 @@ impl Window {
                 chat.message_list = messages;
             }
             MenuState::Login(_) => {}
+        }
+    }
+}
+
+async fn handle_chat_window_input(chat: &mut ChatWindow, event: &Event, data: &mut ChatData) {
+    if chat.status_message.is_some() {
+        chat.status_message = None;
+    }
+    if let Event::Key(KeyEvent {
+        code,
+        modifiers: _,
+        kind: _,
+        state: _,
+    }) = event
+    {
+        match code {
+            KeyCode::Enter => {
+                if let Some(session_data) = data.logins.get(&chat.title) {
+                    let result = session_data
+                        .client
+                        .send_message(&chat.message_composer)
+                        .await;
+                    let message = if let Err(e) = result {
+                        format!("Could not send message: {e}")
+                    } else {
+                        chat.message_composer.clear();
+                        "Message sent.".into()
+                    };
+
+                    chat.status_message = Some(message);
+                }
+            }
+            KeyCode::Char(c) => {
+                chat.message_composer.push(*c);
+            }
+            KeyCode::Backspace => {
+                chat.message_composer.pop();
+            }
+            _ => {}
         }
     }
 }
