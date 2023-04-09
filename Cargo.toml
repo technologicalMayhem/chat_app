@@ -6,21 +6,22 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-argon2 = "0.5.0"
-base64 = "0.21.0"
-chrono = { version = "0.4.24", features = ["serde"] }
-crossterm = "0.26.1"
-diesel = { version = "2.0.3", features = ["sqlite", "r2d2", "returning_clauses_for_sqlite_3_35", "chrono"] }
-diesel_migrations = { version = "2.0.0", features = ["sqlite"] }
-eyre = "0.6.8"
-rand = "0.8.5"
-strum = { version = "0.24.1", features = ["derive"] }
-thiserror = "1.0.39"
-tui = "0.19.0"
+argon2 = "0.5"
+base64 = "0.21"
+chrono = { version = "0.4", features = ["serde"] }
+crossterm = "0.26"
+diesel = { version = "2", features = ["sqlite", "r2d2", "returning_clauses_for_sqlite_3_35", "chrono"] }
+diesel_migrations = { version = "2", features = ["sqlite"] }
+eyre = "0.6"
+rand = "0.8"
+strum = { version = "0.24", features = ["derive"] }
+thiserror = "1"
+tui = "0.19"
 rocket = { version = "=0.5.0-rc.3", features = ["json"] }
-serde = { version = "1.0.159", features = ["derive"] }
-r2d2 = "0.8.10"
-serde_json = "1.0.95"
-reqwest = { version = "0.11.16", features = ["json", "blocking"] }
-reqwest-eventsource = "0.4.0"
-tokio = "1.27.0"
+serde = { version = "1.0", features = ["derive"] }
+r2d2 = "0.8"
+serde_json = "1.0"
+reqwest = { version = "0.11", features = ["json", "blocking"] }
+reqwest-eventsource = "0.4"
+tokio = "1.27"
+libsqlite3-sys = { version = ">=0.17.2, <0.26.0", features = ["bundled"] }
