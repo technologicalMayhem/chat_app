@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::io::Cursor;
 
-use chat_app::models::{Message, LoginResult, Credentials};
+use chat_app::models::{Credentials, LoginResult, Message};
 use chat_app::{AppError, ChatApp, DbError, LoginToken, MessageFilter};
 use chrono::{DateTime, Local};
 use rocket::form::FromFormField;
@@ -45,7 +45,10 @@ fn rocket() -> _ {
         .manage(app)
         .manage(MessageBroadcast::new())
         .mount("/auth", routes![login, logout])
-        .mount("/", routes![send_message, get_messages, get_user, register, events])
+        .mount(
+            "/",
+            routes![send_message, get_messages, get_user, register, events],
+        )
 }
 
 enum RegisterResult {
@@ -130,7 +133,10 @@ async fn get_messages(
 }
 
 #[post("/user", data = "<ids>")]
-async fn get_user(app: &State<Mutex<ChatApp>>, ids: Json<Vec<i32>>) -> Json<HashMap<i32, Option<String>>> {
+async fn get_user(
+    app: &State<Mutex<ChatApp>>,
+    ids: Json<Vec<i32>>,
+) -> Json<HashMap<i32, Option<String>>> {
     let mut app = app.lock().await;
     let names = ids
         .iter()
@@ -169,9 +175,7 @@ enum ApiKeyError {
 struct FormDateTime(DateTime<Local>);
 
 #[rocket::async_trait]
-impl<'r> FromFormField<'r> for FormDateTime {
-    
-}
+impl<'r> FromFormField<'r> for FormDateTime {}
 
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for AppUser {

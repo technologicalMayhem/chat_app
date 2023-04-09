@@ -7,7 +7,10 @@ use tui::{
     widgets::{Block, Borders, List, ListItem, Paragraph, Widget},
 };
 
-use crate::{client::{Client, AuthDetails}, ChatData, SessionData};
+use crate::{
+    client::{AuthDetails, Client},
+    ChatData, SessionData,
+};
 
 /// Used to hold the current window state.
 #[derive(Clone)]
@@ -197,9 +200,11 @@ impl Window {
     }
 
     async fn submit_form(&mut self, form: &mut LoginWindow, data: &mut ChatData) {
-        let auth_details = AuthDetails::new(&form.address.content,
+        let auth_details = AuthDetails::new(
+            &form.address.content,
             &form.username.content,
-            &form.password.content);
+            &form.password.content,
+        );
         let result = match form.intent {
             Intent::Login => Client::login(auth_details).await,
             Intent::Register => Client::register(auth_details).await,

@@ -2,7 +2,7 @@ use crate::schema::{authentications, messages, users};
 use chrono::NaiveDateTime;
 use diesel::{Insertable, Queryable, Selectable};
 use rocket::response::Responder;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Queryable, Selectable, Serialize)]
 pub struct User {
