@@ -24,4 +24,11 @@ diesel::table! {
     }
 }
 
-diesel::allow_tables_to_appear_in_same_query!(authentications, messages, users,);
+diesel::joinable!(authentications -> users (userid));
+diesel::joinable!(messages -> users (userid));
+
+diesel::allow_tables_to_appear_in_same_query!(
+    authentications,
+    messages,
+    users,
+);
