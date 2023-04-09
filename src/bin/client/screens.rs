@@ -7,7 +7,7 @@ use tui::{
     widgets::{Block, Borders, List, ListItem, Paragraph, Widget},
 };
 
-use crate::{client::Client, ChatData, SessionData};
+use crate::{client::{Client, AuthDetails}, ChatData, SessionData};
 
 /// Used to hold the current window state.
 #[derive(Clone)]
@@ -120,14 +120,21 @@ impl Window {
                 // There must be a better way to go about this, but I am not seeing it yet.
                 let mut form = form.clone();
                 self.handle_login_window_input(&mut form, event, data).await;
-                self.state = MenuState::Login(form);
+                if let MenuState::Login(_) = self.state {
+                    self.state = MenuState::Login(form);
+                }
             }
         }
     }
 
-    async fn handle_login_window_input(&mut self, form: &mut LoginWindow, event: &Event, data: &mut ChatData) {
+    async fn handle_login_window_input(
+        &mut self,
+        form: &mut LoginWindow,
+        event: &Event,
+        data: &mut ChatData,
+    ) {
         if form.status_message.is_some() {
-            form.status_message = None;
+            //form.status_message = None;
         }
         if let Event::Key(KeyEvent {
             code,
@@ -145,7 +152,7 @@ impl Window {
                         LoginWindowFocus::Pasword => LoginWindowFocus::Username,
                         LoginWindowFocus::Intent => LoginWindowFocus::Pasword,
                     };
-                },
+                }
                 KeyCode::Down => {
                     form.focus = match form.focus {
                         LoginWindowFocus::Address => LoginWindowFocus::Username,
@@ -154,16 +161,16 @@ impl Window {
                             LoginWindowFocus::Intent
                         }
                     }
-                },
+                }
                 KeyCode::Left if form.focus == LoginWindowFocus::Intent => {
                     form.intent = Intent::Login;
-                },
+                }
                 KeyCode::Right if form.focus == LoginWindowFocus::Intent => {
                     form.intent = Intent::Register;
-                },
+                }
                 KeyCode::Enter => {
                     self.submit_form(form, data).await;
-                },
+                }
                 KeyCode::Char(c) => match form.focus {
                     LoginWindowFocus::Address => form.address.content.push(*c),
                     LoginWindowFocus::Username => form.username.content.push(*c),
@@ -190,24 +197,14 @@ impl Window {
     }
 
     async fn submit_form(&mut self, form: &mut LoginWindow, data: &mut ChatData) {
-        match match form.intent {
-            Intent::Login => {
-                Client::login(
-                    &form.address.content,
-                    &form.username.content,
-                    &form.password.content,
-                )
-                .await
-            }
-            Intent::Register => {
-                Client::register(
-                    &form.address.content,
-                    &form.username.content,
-                    &form.password.content,
-                )
-                .await
-            }
-        } {
+        let auth_details = AuthDetails::new(&form.address.content,
+            &form.username.content,
+            &form.password.content);
+        let result = match form.intent {
+            Intent::Login => Client::login(auth_details).await,
+            Intent::Register => Client::register(auth_details).await,
+        };
+        match result {
             Ok(client) => {
                 let username = &form.username.content;
                 match SessionData::new(client).await {
@@ -221,8 +218,7 @@ impl Window {
                         });
                     }
                     Err(e) => {
-                        form.status_message =
-                            Some(format!("Could not create session: {e}"));
+                        form.status_message = Some(format!("Could not create session: {e}"));
                     }
                 }
             }

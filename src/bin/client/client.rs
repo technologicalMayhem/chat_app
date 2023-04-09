@@ -1,14 +1,11 @@
-use std::{
-    collections::HashMap,
-    sync::mpsc::Receiver,
-};
+use std::{collections::HashMap, sync::mpsc::Receiver};
 
 use chat_app::{
     models::{Credentials, LoginResult, Message},
     LoginToken, MessageFilter,
 };
 use reqwest::{Client as HttpClient, RequestBuilder, StatusCode};
-use reqwest_eventsource::{EventSource, Event};
+use reqwest_eventsource::{Event, EventSource};
 use rocket::futures::StreamExt;
 use thiserror::Error;
 
@@ -33,7 +30,7 @@ pub enum Error {
     #[error("Failed to deserialize data received from the server. This is a bug.")]
     DeserializingFailed(reqwest::Error),
     #[error("Could not register. The username is already in use.")]
-    UsernameInUse
+    UsernameInUse,
 }
 
 pub struct Client {
@@ -42,26 +39,35 @@ pub struct Client {
     http_client: HttpClient,
 }
 
+pub struct AuthDetails {
+    pub address: String,
+    pub credentials: Credentials,
+}
+
+impl AuthDetails {
+    pub fn new(address: &str, username: &str, password: &str) -> Self {
+        Self {
+            address: address.to_string(),
+            credentials: Credentials {
+                username: username.to_string(),
+                password: password.to_string(),
+            },
+        }
+    }
+}
+
 impl Client {
-    pub async fn login(address: &str, username: &str, password: &str) -> Result<Self, Error> {
-        let credentials = Credentials {
-            username: username.to_string(),
-            password: password.to_string(),
-        };
+    pub async fn login(auth_details: AuthDetails) -> Result<Self, Error> {
         let client = Self::create_client()?;
-        Self::inner_login(address, credentials, client).await
+        Self::inner_login(&auth_details.address, auth_details.credentials, client).await
     }
 
-    pub async fn register(address: &str, username: &str, password: &str) -> Result<Self, Error> {
-        let credentials = Credentials {
-            username: username.to_string(),
-            password: password.to_string(),
-        };
+    pub async fn register(auth_details: AuthDetails) -> Result<Self, Error> {
         let client = Self::create_client()?;
         let endpoint = "/register";
         match client
-            .post(&format!("http://{address}{endpoint}"))
-            .json(&credentials)
+            .post(&format!("http://{}{endpoint}", &auth_details.address))
+            .json(&auth_details.credentials)
             .send()
             .await
         {
@@ -70,7 +76,7 @@ impl Client {
             Err(e) => return Err(Self::handle_error(e, endpoint)),
         };
 
-        Self::inner_login(address, credentials, client).await
+        Self::inner_login(&auth_details.address, auth_details.credentials, client).await
     }
 
     async fn inner_login(
@@ -85,11 +91,10 @@ impl Client {
             .send()
             .await
         {
-            Ok(response) if response.status() == StatusCode::UNAUTHORIZED => return Err(Error::LoginFailed),
-            Ok(response) => response
-                .json()
-                .await
-                .map_err(Error::DeserializingFailed)?,
+            Ok(response) if response.status() == StatusCode::UNAUTHORIZED => {
+                return Err(Error::LoginFailed)
+            }
+            Ok(response) => response.json().await.map_err(Error::DeserializingFailed)?,
             Err(e) => return Err(Self::handle_error(e, endpoint)),
         };
 
@@ -139,10 +144,7 @@ impl Client {
             .send()
             .await
         {
-            Ok(response) => Ok(response
-                .json()
-                .await
-                .map_err(Error::DeserializingFailed)?),
+            Ok(response) => Ok(response.json().await.map_err(Error::DeserializingFailed)?),
             Err(e) => Err(Self::handle_error(e, endpoint)),
         }
     }
@@ -157,10 +159,7 @@ impl Client {
             .send()
             .await
         {
-            Ok(response) => Ok(response
-                .json()
-                .await
-                .map_err(Error::DeserializingFailed)?),
+            Ok(response) => Ok(response.json().await.map_err(Error::DeserializingFailed)?),
             Err(e) => Err(Self::handle_error(e, endpoint)),
         }
     }
@@ -177,21 +176,23 @@ impl Client {
 
         let (tx, rx) = std::sync::mpsc::channel();
 
-        tokio::spawn(async move { loop {
-            while let Some(event) = event_source.next().await {
-                match event {
-                    Ok(Event::Message(message)) => {
-                        if let Ok(message) = serde_json::from_str::<Message>(&message.data) {
-                            if tx.send(message).is_err() {
-                                return;
-                            }
-                        };
-                    },
-                    Err(_) => return,
-                    _ => {}
+        tokio::spawn(async move {
+            loop {
+                while let Some(event) = event_source.next().await {
+                    match event {
+                        Ok(Event::Message(message)) => {
+                            if let Ok(message) = serde_json::from_str::<Message>(&message.data) {
+                                if tx.send(message).is_err() {
+                                    return;
+                                }
+                            };
+                        }
+                        Err(_) => return,
+                        _ => {}
+                    }
                 }
             }
-        }});
+        });
 
         Ok(rx)
     }
