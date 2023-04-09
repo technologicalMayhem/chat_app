@@ -113,7 +113,13 @@ impl Window {
     /// Handles the input for the window and apply changes to it and the ``ChatData`` as necessary.
     pub(crate) async fn handle_input(&mut self, data: &mut ChatData, event: &Event) {
         // If the event is from a a key release, we ignore it
-        if let Event::Key(KeyEvent { code: _, modifiers: _, kind: KeyEventKind::Release, state: _ }) = event {
+        if let Event::Key(KeyEvent {
+            code: _,
+            modifiers: _,
+            kind: KeyEventKind::Release,
+            state: _,
+        }) = event
+        {
             return;
         }
         match &mut self.state {
