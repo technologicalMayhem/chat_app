@@ -25,3 +25,4 @@ reqwest = { version = "0.11", features = ["json", "blocking"] }
 reqwest-eventsource = "0.4"
 tokio = "1.27"
 libsqlite3-sys = { version = ">=0.17.2, <0.26.0", features = ["bundled"] }
+tokio-util = "0.7.7"

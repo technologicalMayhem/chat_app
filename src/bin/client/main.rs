@@ -2,7 +2,6 @@ use std::{
     cmp::Ordering,
     collections::HashMap,
     io::{self},
-    sync::mpsc::Receiver,
     time::Duration,
 };
 
@@ -20,6 +19,8 @@ use crossterm::{
 };
 use eyre::Result;
 use screens::Window;
+use tokio::sync::mpsc::{channel, error::TryRecvError, Receiver, Sender};
+use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout},
@@ -43,30 +44,31 @@ async fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // create app and run it
-    let mut app = App::new();
-    run_app(&mut terminal, &mut app).await?;
-    // logout all clients
-    for (username, session) in app.chat.logins {
-        let result = session.client.logout().await;
-        if let Err(e) = result {
-            println!("Error whilst logging out as {username}: {e}");
-        }
-    }
+    let (mut app, mut shutdown_receiver) = App::new();
+    let app_task = tokio::spawn(async move {
+        let result = run_app(&mut terminal, &mut app).await;
 
-    // restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
+        // restore terminal
+        disable_raw_mode()?;
+        execute!(
+            terminal.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        )?;
+        terminal.show_cursor()?;
 
-    Ok(())
+        result
+    });
+    let app_result = app_task.await?;
+    shutdown_receiver.recv().await;
+    app_result
 }
 
 /// Main loop for running the app.
-async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
+async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()>
+where
+    B: std::io::Write,
+{
     loop {
         for session in app.chat.logins.values_mut() {
             session.update().await?;
@@ -89,7 +91,10 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                         modifiers: KeyModifiers::CONTROL,
                         kind: _,
                         state: _,
-                    } => return Ok(()),
+                    } => {
+                        app.shutdown.cancel();
+                        break;
+                    }
                     KeyEvent {
                         code: KeyCode::Char('n'),
                         modifiers: KeyModifiers::CONTROL,
@@ -120,6 +125,16 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
             };
         }
     }
+
+    // logout all clients
+    for (username, session) in &app.chat.logins {
+        let result = session.client.logout().await;
+        if let Err(e) = result {
+            println!("Error whilst logging out as {username}: {e}");
+        }
+    }
+
+    Ok(())
 }
 
 /// Update the ui.
@@ -187,6 +202,7 @@ enum TabTitle {
 struct App {
     chat: ChatData,
     screens: ActiveVec<Window>,
+    shutdown: ShutdownHandler,
 }
 
 /// Holds the data relating to the current state of the application
@@ -202,9 +218,42 @@ struct SessionData {
     known_usernames: HashMap<i32, String>,
 }
 
+///
+struct ShutdownHandler {
+    token: CancellationToken,
+    sender: Sender<()>,
+}
+
+impl ShutdownHandler {
+    fn new() -> (Self, Receiver<()>) {
+        let (sender, receiver) = channel(2);
+        let token = CancellationToken::new();
+        (Self { token, sender }, receiver)
+    }
+
+    pub fn child(&self) -> Self {
+        Self {
+            token: self.token.child_token(),
+            sender: self.sender.clone(),
+        }
+    }
+
+    pub fn cancel(&self) {
+        self.token.cancel()
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.token.is_cancelled()
+    }
+
+    pub fn cancelled(&self) -> WaitForCancellationFuture<'_> {
+        self.token.cancelled()
+    }
+}
+
 impl App {
     /// Create a new instance of ``App``.
-    fn new() -> Self {
+    fn new() -> (Self, Receiver<()>) {
         let mut screen: ActiveVec<Window> = ActiveVec::new();
         screen.push(Window::new());
 
@@ -212,10 +261,16 @@ impl App {
             logins: HashMap::new(),
         };
 
-        App {
-            chat,
-            screens: screen,
-        }
+        let (shutdown, receiver) = ShutdownHandler::new();
+
+        (
+            App {
+                chat,
+                screens: screen,
+                shutdown,
+            },
+            receiver,
+        )
     }
 
     /// Get the ``TabTitle``s to show.
@@ -264,10 +319,8 @@ impl SessionData {
             let message = match self.events.try_recv() {
                 Ok(message) => message,
                 Err(e) => match e {
-                    std::sync::mpsc::TryRecvError::Empty => break,
-                    std::sync::mpsc::TryRecvError::Disconnected => {
-                        return Err(eyre::eyre!("Server disconnected!"))
-                    }
+                    TryRecvError::Empty => break,
+                    TryRecvError::Disconnected => return Err(eyre::eyre!("Server disconnected!")),
                 },
             };
 

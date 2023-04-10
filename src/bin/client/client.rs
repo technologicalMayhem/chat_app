@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::mpsc::Receiver};
+use std::collections::HashMap;
 
 use chat_app::{
     models::{Credentials, LoginResult, Message},
@@ -8,6 +8,7 @@ use reqwest::{Client as HttpClient, RequestBuilder, StatusCode};
 use reqwest_eventsource::{Event, EventSource};
 use rocket::futures::StreamExt;
 use thiserror::Error;
+use tokio::sync::mpsc::{channel, Receiver};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -174,7 +175,7 @@ impl Client {
         let mut event_source =
             EventSource::new(request).map_err(Error::EventSourceCreationFailed)?;
 
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = channel(8);
 
         tokio::spawn(async move {
             loop {
@@ -182,7 +183,7 @@ impl Client {
                     match event {
                         Ok(Event::Message(message)) => {
                             if let Ok(message) = serde_json::from_str::<Message>(&message.data) {
-                                if tx.send(message).is_err() {
+                                if tx.send(message).await.is_err() {
                                     return;
                                 }
                             };
