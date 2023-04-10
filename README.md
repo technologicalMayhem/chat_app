@@ -16,7 +16,7 @@ If you want to build this project, make sure you have rust installed, then just 
 Otherwise you can grab the prebuilt binaries from the [releases page](https://github.com/technologicalMayhem/chat_app/releases). There is a windows and linux version available.
 
 ## Usage
-Just run the server binary for the server to start the server. By default it only bind to ``127.0.0.1`` on port ``8888``. If you want to change that, create a file called ``Rocket.toml`` and add the following to it:
+Just run the server binary for the server to start the server. By default it only bind to ``127.0.0.1`` on port ``8000``. If you want to change that, create a file called ``Rocket.toml`` and add the following to it:
 ```
 [default]
 address = "127.0.0.1"
